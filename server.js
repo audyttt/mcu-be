@@ -1,58 +1,96 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const cors = require('cors');  // Import CORS
 
 // Initialize express
 const app = express();
 const port = 3000;
 
+// Enable CORS
+app.use(cors());  // Allow requests from any origin by default
+
 // Middleware to parse JSON payloads
 app.use(bodyParser.json());
 
 // Connect to MongoDB (replace 'your-database' with your actual database name)
-mongoose.connect('mongodb://localhost:27017/mcu')
+mongoose.connect('mongodb://localhost:27017/animal-feeding')
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// Define a Mongoose schema and model
-const sensorSchema = new mongoose.Schema({
-    sensorValue: Number,
-    timestamp: { type: Date, default: Date.now }
+// Define a schema and model for logs
+const foodLogSchema = new mongoose.Schema({
+    weight: Number,          // Sensor weight reading
+    recordedAt: { type: Date, default: Date.now },  // Timestamp of the log
 });
 
-const SensorData = mongoose.model('SensorData', sensorSchema);
+const FoodLog = mongoose.model('FoodLog', foodLogSchema);
 
-// Endpoint to receive POST requests from ESP8266
-app.post('/endpoint', async (req, res) => {
+// Endpoint to handle sensor data and log it
+app.post('/weight', async (req, res) => {
     try {
-        // Log the received data
-        console.log('Received data from ESP8266:', req.body);
+        const sensorWeight = req.body.weight;  // Weight from the sensor
 
-        // Extract the new sensor value from the request body
-        const newSensorValue = req.body.sensor_value;
-
-        // Find the most recent data entry in the database
-        const latestData = await SensorData.findOne().sort({ timestamp: -1 });
-        console.log('latestData.sensorValue', latestData.sensorValue);
-        
-        // Check if the latest data exists and compare with the new data
-        if (newSensorValue >= latestData.sensorValue ) {
-            // If the current data is less than or equal to the latest data, don't save
-            return res.status(400).send({ message: 'New data is not greater than the last saved value.' });
-        }
-
-        // If the new value is greater, save the new data to the database
-        const newData = new SensorData({
-            sensorValue: newSensorValue,
+        // Log the new weight with a timestamp
+        const newLog = new FoodLog({
+            weight: sensorWeight,
         });
 
-        await newData.save();
+        await newLog.save();
 
-        // Respond back to the ESP8266
-        res.send({ message: 'Data received and saved successfully!' });
+        res.send({ message: `New weight logged: ${sensorWeight}kg.` });
     } catch (error) {
-        console.error('Error saving data:', error);
-        res.status(500).send({ message: 'Error saving data' });
+        console.error('Error logging weight:', error);
+        res.status(500).send({ message: 'Error logging weight data.' });
+    }
+});
+
+// Endpoint to retrieve summary for all data, grouped by date and with summary for each day
+app.get('/summary-all', async (req, res) => {
+    try {
+        // Get all logs sorted by date
+        const allLogs = await FoodLog.find().sort({ recordedAt: 1 });
+
+        // Create an object to store the data grouped by date
+        const groupedData = {};
+
+        // Iterate over the logs and group by date
+        allLogs.forEach((log, index) => {
+            const date = log.recordedAt.toISOString().split('T')[0];  // Extract the date part (YYYY-MM-DD)
+            
+            // If this date isn't in the groupedData yet, initialize it
+            if (!groupedData[date]) {
+                groupedData[date] = {
+                    weightSummary: 0,  // Initialize total weight eaten summary
+                    logs: []
+                };
+            }
+
+            // Add the log entry for this date
+            groupedData[date].logs.push({
+                weight: log.weight,
+                time: log.recordedAt.toISOString() // Record the time part (HH:MM:SS)
+            });
+
+            // Calculate the weight summary (difference from previous log)
+            if (index > 0 && allLogs[index - 1].recordedAt.toISOString().split('T')[0] === date) {
+                const previousWeight = allLogs[index - 1].weight;
+                const currentWeight = log.weight;
+                const weightDifference = previousWeight - currentWeight;
+                
+                // Only add to the summary if there is a positive weight difference (indicating food was eaten)
+                if (weightDifference > 0) {
+                    groupedData[date].weightSummary += weightDifference;
+                }
+            }
+        });
+
+        // Send the grouped data back as the response
+        res.send(groupedData);
+
+    } catch (error) {
+        console.error('Error retrieving data:', error);
+        res.status(500).send({ message: 'Error retrieving data.' });
     }
 });
 
