@@ -13,10 +13,13 @@ app.use(cors());  // Allow requests from any origin by default
 // Middleware to parse JSON payloads
 app.use(bodyParser.json());
 
-// Connect to MongoDB (replace 'your-database' with your actual database name)
-mongoose.connect('mongodb://localhost:27017/animal-feeding')
+
+const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/animal-feeding';
+
+mongoose.connect(mongoUrl)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
+
 
 // Define a schema and model for logs
 const foodLogSchema = new mongoose.Schema({
@@ -31,7 +34,6 @@ app.post('/weight', async (req, res) => {
     try {
         const sensorWeight = req.body.weight;  // Weight from the sensor
 
-        // Log the new weight with a timestamp
         const newLog = new FoodLog({
             weight: sensorWeight,
         });

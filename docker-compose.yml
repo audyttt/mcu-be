@@ -4,20 +4,27 @@ services:
     image: mongo:latest
     container_name: mongodb
     ports:
-      - "27017:27017"  # Expose MongoDB on port 27017
+      - "27017:27017"
     volumes:
-      - mongo-data:/data/db  # Persist MongoDB data in a named volume
+      - mongo-data:/data/db
+    networks:
+      - backend-network
 
   esp8266-backend:
     build:
       context: .
     container_name: esp8266-backend
     ports:
-      - "3000:3000"  # Expose your Node.js app on port 3000
+      - "3000:3000"
     environment:
-      MONGO_URL: mongodb://mongodb:27017/animal-feeding  # MongoDB connection string
+      - MONGO_URL=mongodb://mongodb:27017/animal-feeding
     depends_on:
-      - mongodb  # Make sure MongoDB starts before Node.js app
+      - mongodb
+    networks:
+      - backend-network
+
+networks:
+  backend-network:
 
 volumes:
-  mongo-data:  # Named volume to persist MongoDB data
+  mongo-data:
